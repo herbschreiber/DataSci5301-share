@@ -1,0 +1,231 @@
+---
+title: "A Look at a New York Shooting Database"
+output:
+  html_document:
+  df_print: paged
+  html_notebook: default
+  pdf_document: default
+  word_document: default
+---
+
+# The following is Herbs RMD for the Shooting assignment - Data Science
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(dplyr)
+library(readxl)
+library(writexl)
+library(devtools)
+library(ggplot2)
+library(rmarkdown)
+library(lubridate)
+library(ggmap)
+```
+
+# New York Shootings were downloaded from the following:
+
+Downloaded the link below given in course material on 8 Nov 2023 for NYDP Shooting Incident Data (Historic): <https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD> A glimpse of the loaded data follows:
+
+```{r read_in_and_see}
+url_in <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+
+gunshots <- read_csv(url_in)
+summary(gunshots)
+gunshots
+
+write_csv(gunshots, "gunshots.csv")
+```
+
+## Peek at whats in the database using class and glimpse.
+
+```{r tidy_it_up}
+
+class(gunshots)
+gunshots_tidy <- gunshots %>% 
+  rename(
+   date = "OCCUR_DATE",
+   time = "OCCUR_TIME"
+    )
+
+```
+
+##I only checked for missing in the MURDER FLAG col since that is the one col I am interested in. The other NA sun as location can be dealt with if needed by removal or placement in another table for anaylsis with out that location. Most the graphsd allow for missing data if that is what I was graphing.
+
+## First peek at the data with bar charts...
+
+```{r}
+
+gunshots_tidy |>
+  ggplot(aes(x = gunshots_tidy$BORO, fill = STATISTICAL_MURDER_FLAG))+  
+  geom_bar()+
+  theme(axis.text.x=element_text(angle = -90, hjust = 0)) +
+  labs(
+    title = "BORO Shooting Reports",
+    subtitle="Data from cityofnewyork URL above"
+  )
+
+```
+
+## So the above immediatly shows that there is a difference in areas reporting shootings and deaths–so I wanted to look further.
+
+
+
+```{r}
+freq = table(gunshots_tidy$LOCATION_DESC)
+feq_df = as.data.frame(freq)
+print(freq)
+```
+
+
+```{r}
+
+#see if locations have info and what it reveals
+
+local = gunshots_tidy %>% dplyr::count(gunshots_tidy$LOCATION_DESC, gunshots_tidy$LOC_OF_OCCUR_DESC) 
+local = as.data.frame(local)
+colnames(local) = c("location","desc","count")
+
+local_sort = local[order(local$count,local$location, decreasing = T),]
+local_sort
+
+#size the data down to graph main contributors without distractors...
+
+halflocal = local_sort[2:25,]
+
+```
+
+```{r}
+
+p = ggplot(halflocal, aes(x = reorder(location,count), y = count, fill = desc)) +  
+  geom_bar(stat="identity") +
+  theme(axis.text.x=element_text(angle = -90, hjust = 0)) +
+  labs(
+    title = "Shooting Counts LOc and Des ",
+    subtitle="First 16 Locations"
+   )
+p + coord_flip()
+
+```
+
+```{r}
+#plot remainder just to see whats there
+
+otherlocal = local_sort[26:77,]
+
+pp = ggplot(otherlocal, aes(x = reorder(location,count), y = count, fill = desc)) +  
+  geom_bar(stat="identity") +
+  theme(axis.text.x=element_text(angle = -90, hjust = 0)) +
+  labs(
+    title = "Shooting Counts LOc and Des ",
+    subtitle="Last Locations"
+   )
+pp + coord_flip()
+
+```
+
+
+## Unfortunately there was a lot of missing data - but I was able to gleam a little info that most the shootings over the years were happening within or near public and multidwelling housing. This leaps out at me like it could be a financial, population density and police services that could be affecting this...it would take a bit more reseaerch and statistics to figure that out. But I do want to pursue who is shooting who.
+
+## To do this I had to eliminate some confounding errors that through off the charts and data.
+
+```{r}
+df1 = gunshots_tidy
+
+shoot = df1[!df1$PERP_AGE_GROUP =="(null)",]
+shoot = shoot[!shoot$PERP_AGE_GROUP =="1020",]
+shoot = shoot[!shoot$PERP_AGE_GROUP =="940",]
+shoot = shoot[!shoot$PERP_AGE_GROUP =="UNKNOWN",]
+shoot = shoot[!shoot$PERP_AGE_GROUP == "NA",]
+shoot = shoot[!shoot$PERP_AGE_GROUP == "224",]
+shoot = shoot[!shoot$VIC_AGE_GROUP =="1022",]
+shoot = shoot[!shoot$VIC_AGE_GROUP =="UNKNOWN",]
+
+```
+
+```{r}
+ggplot(shoot, aes(x = shoot$PERP_AGE_GROUP, color = shoot$PERP_AGE_GROUP, fill = shoot$PERP_AGE_GROUP ))+
+  geom_density(alpha=.5)+
+    labs(
+      title = "Perp age groups comparison",
+    subtitle="Data from cityofnewyork URL above"
+  )
+```
+
+### So the above plot did not work out too well it seemed to show that the younger individuals were shooting more but -- something is wrong with the calculation in density for under 18 so I decided to return to BAR CHART.
+
+```{r}
+
+ggplot(shoot, aes(x = PERP_AGE_GROUP)) +  
+  geom_bar(aes(y = (..count..)/sum(..count..), fill =PERP_AGE_GROUP)
+)
+
+```
+
+### This one definetly shows age does appear to have different results. But, I needed more info so I added victims to the perp count and as shown below, sadly, youths were shooting youths more than older adults were shooting anyone. Again really sad info if you think about it.
+
+```{r}
+ggplot(shoot,aes(x = shoot$PERP_AGE_GROUP, fill = VIC_AGE_GROUP))+  
+  geom_bar(alpha = .7)+
+  theme(axis.text.x=element_text(angle = -90, hjust = 0)) +
+  labs(
+    title = "Shooting Counts Per Perp and Vic Age Groups",
+    subtitle="Data from cityofnewyork URL above"
+  )
+
+```
+
+## And last but not least I wanted to see if we could use the lat long data. It was easier than expected as I got a really quick "heat" like mapping. The shape follows the state of New York as you can see below.
+
+```{r}
+ggplot() +
+  geom_point(data = gunshots_tidy, aes(x = Longitude, y = Latitude), alpha = .05)+
+  labs(
+  title = "Shooting Reports by late long - looks like NY",
+    subtitle="shows the HEAT and looks like BRONX and QUEENS are hot!",
+   caption = "Can't wait to learn how to overlay this on a real map"
+  )
+```
+
+## This made me want to see more. So I visited google maps, got signed up to use their maps...downloaded NewYork to this markdown then plotted the above on the map -- and in my amazement it worked out great. Hey becarefull when in the Bronx and Queens because the shooting activity is high there.
+
+#If you have an API key you can uncomment the your API her and the program should knit fine if you place your key in the API key place holder.
+
+```{r}
+#api_key = c(1)
+#api_key
+#library(dotenv)
+#setwd(dir = "/Users/herbertschreiber/Documents/GitHub/DataSci5301-share")
+#list.files()
+#load_dot_env("cred.env")
+#register_google(key = Sys.getenv("GOOGLE_MAPS_API"))
+#
+#. OR
+#
+#api_secret = "your key here"
+#register_google(key = api_secret)
+```
+#The code above is my attempt to put my API google maps key into an environment and recall - I do not know if this environment travels with my repository so the image may not come out.  IF YOU DO NOT GET A MAP -- PLEASE -- OPEN THE PNG FILE this is what the code chuck would produce if you had an API key.  Sorry about any confusion.
+
+```{r}
+#library(ggmap)
+
+#nyc_map <- get_map(location = c(lon = -74.00, lat = 40.71), maptype = "terrain", zoom = 11)
+
+#ggmap(nyc_map) +
+#  geom_point(data = gunshots_tidy, aes(x = Longitude, y = Latitude), color = "red", alpha = .04)+
+#  labs(
+#  title = "Shooting Reports by late long - looks like NY",
+#  subtitle="shows the HEAT and looks like BRONX and QUEENS are hot!",
+#  )
+```
+
+### So in conclusion, as I mentioned above this is sad data when you think about the lives and what is happening. Aside from pointing out that there appears be be a big difference in shooter age and in location there is so much that I haven't looked at.
+
+## The data is out their to further visualize what is happening in these locations–is it jobs, weather, density, drugs, school, the list goes on.... Another interesting idea is to pull the data time frame out and see how that changes things as the data covers before and after COVID lockdowns.
+
+## This has been an eye opening assignment for me as I am fairly new to R and Markdown...but now I want to learn more. Thanks. Herb.\```{r}
+
+
+
