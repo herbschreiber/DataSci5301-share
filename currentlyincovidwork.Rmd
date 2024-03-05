@@ -1,0 +1,307 @@
+---
+title: "A Quick View of Covid Between States"
+author: "Herb"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  word_document: default
+  html_document:
+    fig_width: 7
+    fig_height: 12
+    fig_caption: true
+---
+
+```{r library in}
+
+library(tidyverse)
+library(dplyr)
+library(readxl)
+library(writexl)
+library(devtools)
+library(ggplot2)
+library(markdown)
+library(lubridate)
+library(RCurl)
+library(MASS)
+library(timetk)
+library(tibbletime)
+library(knitr)
+suppressWarnings({})
+
+```
+```{r readin}
+
+url_in<-"https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/"
+
+```
+
+
+
+```{r}
+
+file_names<-c("time_series_covid19_confirmed_US.csv",  "time_series_covid19_confirmed_global.csv", "time_series_covid19_deaths_US.csv",  "time_series_covid19_deaths_global.csv")
+urls<-str_c(url_in,file_names)
+us_cases<-read_csv(urls[1])
+us_deaths<-read_csv(urls[3])
+head(us_cases)
+```
+
+```{r}
+us_deaths1 = us_deaths[,-c(1:5,8,11)]
+head(us_deaths1)
+
+```
+```{r}
+deaths <- us_deaths1 %>%
+  pivot_longer(
+    cols = -c(Admin2, Province_State, Lat, Long_, Population),
+    names_to = "date" ,
+    values_to = "deaths") %>%
+    mutate(date=mdy(date))
+```
+
+
+```{r}
+head(deaths)
+```
+
+```{r}
+head(us_cases)
+```
+
+```{r}
+us_cases1 = us_cases[,-c(1:5,8,11)]
+head(us_cases1)
+```
+
+```{r}
+cases <- us_cases1 %>%
+  pivot_longer(cols = -c(Admin2, Province_State, Lat, Long_),
+    names_to = "date" ,
+    values_to = "cases") %>%
+    mutate(date=mdy(date))
+head(cases)
+```
+
+```{r}
+cases[,6]
+usdata = cbind(deaths,cases[,6])
+head(usdata)
+tail(usdata)
+sum(is.na(usdata$cases))
+sum(is.na(usdata$deaths))
+```
+```{r}
+cal = usdata[usdata$Province_State == "California",]
+head(cal)
+```
+```{r}
+p <- ggplot(cal, aes(x=date, y=deaths)) +
+  geom_point() + 
+  labs(x="Date",
+  y = "Deaths",
+  title = "California Deaths by Dates Given")
+p
+```
+#Just out of coureosity
+
+
+```{r}
+yearlycases = us_cases[,c(10,1104)]
+head(yearlycases)
+yearlydeaths = us_deaths[,c(6,7, 9,10,11,12,1105)]
+head(yearlydeaths)
+```
+
+```{r}
+usdata = cbind(yearlydeaths,yearlycases)
+head(usdata)
+tail(usdata)
+sum(is.na(usdata$cases))
+sum(is.na(usdata$deaths))
+```
+
+```{r}
+#checking which values are not NA 
+summary(usdata)
+```
+
+```{r}
+sum(usdata$deaths, na.rm = TRUE)
+usdata[usdata$"Population">1000000,]
+colnames(usdata) = c("city", "state", "lat", "long", "city/state","population", "deaths", "longtocheck", "cases")
+head(usdata)
+```
+```{r}
+#. aggregate the data bystate summing deaths and cases and taking mean of population.
+statecases=aggregate(usdata$cases, list(usdata$state), FUN=sum)
+statedeaths=aggregate(usdata$deaths, list(usdata$state), FUN=sum)
+statepop=aggregate(usdata$population, list(usdata$state), FUN=sum)
+head(statecases)
+head(statedeaths)
+head(statepop)
+```
+```{r}
+
+bystate =data.frame(statepop,statecases$x, statedeaths$x)
+names(bystate)[1] = "state"
+names(bystate)[2] = "population"
+names(bystate)[3] = "cases"
+names(bystate)[4] = "deaths"
+bystate[1:10,]
+```
+
+```{r}
+
+bystate = na.omit(bystate)
+bystate
+plot(bystate$cases,bystate$deaths)
+summary(bystate)
+bystate
+bystatesort = bystate[order(bystate$death, decreasing = TRUE),]
+print(bystatesort)
+```
+
+```{r fig.height = 6}
+
+
+barplot(bystate$deaths ~ bystate$state, horiz = TRUE)
+```
+
+```{r fig.height = 6}
+
+plotpop = bystatesort %>%
+  ggplot() +
+labs(title = "Pop by State",
+       x = "Pop",
+       y = "State") + 
+  geom_bar(aes(x = reorder(state, population), y = population, 
+               fill = state), stat = "identity", show.legend = FALSE) +
+ 
+  coord_flip()
+plotpop
+```
+
+
+```{r fig.height = 6}
+plotcases = bystatesort %>%
+  ggplot() +
+  labs(title = "Cases by State",
+       x = "Cases",
+       y = "State") + 
+  geom_bar(aes(x = reorder(state, population), y = cases, 
+               fill = state), stat = "identity", show.legend = FALSE) +
+  coord_flip()
+plotcases
+```
+
+```{r fig.height = 6}
+plotdeaths = bystatesort %>%
+  ggplot() +
+  labs(title = "Deaths by State",
+       x = "Deaths",
+       y = "State") + 
+  geom_bar(aes(x = reorder(state, population), y = deaths, 
+               fill = state), stat = "identity", show.legend = FALSE) +
+  coord_flip()
+plotdeaths
+```
+
+```{r fig.height = 6}
+
+plotdeaths = bystatesort %>%
+  ggplot() +
+  labs(title = "Deaths per Polulation by State",
+       x = "state",
+       y = "Deaths/Population") + 
+  geom_bar(aes(x = reorder(state, population), y = deaths/population, 
+               fill = state), stat = "identity", show.legend = FALSE) +
+  coord_flip()
+plotdeaths
+```
+
+
+```{r getexcell}
+
+my_data <- read_excel("/Users/herbertschreiber/Desktop/R-projects/smallcovid.xlsx")
+my_data
+summary(my_data)
+
+```
+
+
+```{r fig.height = 6}
+
+# Function to add correlation coefficients
+panel.cor <- function(x, y, digits = 2, prefix = "", cex.cor, ...) {
+    usr <- par("usr")
+    on.exit(par(usr))
+    par(usr = c(0, 1, 0, 1))
+    Cor <- abs(cor(x, y)) # Remove abs function if desired
+    txt <- paste0(prefix, format(c(Cor, 0.123456789), digits = digits)[1])
+    if(missing(cex.cor)) {
+        cex.cor <- 0.4 / strwidth(txt)
+    }
+    text(0.5, 0.5, txt,
+         cex = 1 + cex.cor * Cor) # Resize the text by level of correlation
+}
+
+```
+
+```{r}
+# Plotting the correlation matrix
+
+pairs(my_data,
+      upper.panel = panel.cor,    # Correlation panel
+      lower.panel = panel.smooth) # Smoothed regression lines
+suppressWarnings({})
+```
+
+I found this one interesting.  
+
+```{r for rank}
+
+mydatalm = lm(deathbypop ~ temprank, data = my_data)
+summary(mydatalm)
+```
+
+```{r}
+
+my_data1 <- read_excel("/Users/herbertschreiber/Desktop/R-projects/smallcovidstate.xlsx")
+colnames(my_data1)[2] =  "state"
+my_data1
+summary(my_data1)
+
+```
+
+
+```{r}
+ggplot(data = my_data1, aes(y = deathbypop, x = temprank)) +
+        geom_point(aes(color = "red")) +
+        geom_smooth(method = "lm") +
+        geom_text(aes(label=ifelse(temprank<7,as.character(state),'')),hjust=0,vjust=2) +
+        geom_text(aes(label=ifelse(temprank>45,as.character(state),'')),hjust=0,vjust=0) +
+        labs(title = "Scatterplot of deaths per unit of population versus state temp ranking",
+             y = "Deaths/Population)",
+             x = "Ranking - #1 warm -- 50 is coldest")
+```
+
+```{r for population}
+mydatalm = lm(deathbypop ~ popby1000, data = my_data)
+summary(mydatalm)
+```
+```{r}
+ggplot(data = my_data1, aes(y = deathbypop, x = popby1000)) +
+        geom_point(aes(color = "red")) +
+        geom_smooth(method = "lm") +
+        geom_text(aes(label=ifelse(temprank<7,as.character(state),'')),hjust=0,vjust=2) +
+        geom_text(aes(label=ifelse(temprank>45,as.character(state),'')),hjust=0,vjust=0) +
+        labs(title = "Scatterplot of deaths per unit of population versus state population/1000",
+             y = "Deaths/Population)",
+             x = "Stat pop/1000")
+
+```
+
+
+
+
